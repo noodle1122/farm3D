@@ -571,6 +571,15 @@ display: none !important;
 <div class="nav-arrow right" onclick="nextModel()">
 <i class="fas fa-chevron-right"></i>
 </div>
+
+<!-- 错误提示 -->
+<div id="error-message" class="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-200 text-red-500 text-xl font-bold bg-white bg-opacity-80 p-4 rounded-lg hidden">
+    <div class="text-center">
+        <i class="fas fa-exclamation-triangle text-3xl mb-2"></i>
+        <div>模型加载失败</div>
+        <div class="text-sm mt-2" id="error-details"></div>
+    </div>
+</div>
 </div>
 
 <!-- Control Panel -->
@@ -857,6 +866,20 @@ showToast('模型尚未加载完成');
 }
 };
 
+// 显示错误信息
+function showError(message) {
+const errorMessage = document.getElementById('error-message');
+const errorDetails = document.getElementById('error-details');
+errorDetails.textContent = message;
+errorMessage.classList.remove('hidden');
+}
+
+// 隐藏错误信息
+function hideError() {
+const errorMessage = document.getElementById('error-message');
+errorMessage.classList.add('hidden');
+}
+
 // 初始化
 async function initScene() {
 const container = document.getElementById('canvas-container');
@@ -879,6 +902,12 @@ showLoadingUI: false,
 rootElement: container
 });
 
+// 添加错误监听器
+window.viewer.addEventListener('error', (event) => {
+console.error('Viewer error:', event);
+showError('渲染器错误: ' + event.message);
+});
+
 if (window.viewer.perspectiveControls) {
 window.viewer.perspectiveControls.minPolarAngle = 0;
 window.viewer.perspectiveControls.maxPolarAngle = Math.PI;
@@ -897,6 +926,7 @@ await loadModel(currentModelIndex);
 
 } catch (error) {
 console.error('初始化失败:', error);
+showError('初始化失败: ' + error.message);
 }
 }
 
@@ -906,6 +936,7 @@ if (isLoading || !modelList[index]) return;
 isLoading = true;
 
 const loadingOverlay = document.getElementById('loading-overlay');
+hideError(); // 隐藏之前的错误
 
 try {
 loadingOverlay.classList.remove('hidden');
@@ -921,7 +952,32 @@ if (window.viewer && window.viewer.splatMesh && window.viewer.splatMesh.scenes) 
     }
 }
 
-const modelPath = './models/' + currentQuality.charAt(0).toUpperCase() + currentQuality.slice(1) + '/' + modelList[index];
+// 构建正确的模型路径 - 检查是否存在质量分级目录
+let modelPath;
+if (currentQuality !== 'medium') {
+    // 尝试带质量分级的路径
+    modelPath = './models/' + currentQuality.charAt(0).toUpperCase() + currentQuality.slice(1) + '/' + modelList[index];
+} else {
+    // 中等质量时先尝试根models目录
+    modelPath = './models/' + modelList[index];
+}
+
+// 首先检查文件是否存在
+const response = await fetch(modelPath);
+if (!response.ok) {
+    // 如果质量分级路径不存在，尝试根models目录
+    if (currentQuality !== 'medium') {
+        modelPath = './models/' + modelList[index];
+        const fallbackResponse = await fetch(modelPath);
+        if (!fallbackResponse.ok) {
+            throw new Error(`模型文件不存在: ${modelPath} (${response.status})`);
+        }
+    } else {
+        throw new Error(`模型文件不存在: ${modelPath} (${response.status})`);
+    }
+}
+
+console.log('正在加载模型:', modelPath);
 
 await window.viewer.addSplatScene(modelPath, {
 splatAlphaRemovalThreshold: 5,
@@ -939,6 +995,7 @@ showModelCounter();
 } catch (error) {
 console.error('加载模型失败:', error);
 hideLoading();
+showError('模型加载失败: ' + error.message);
 showToast('加载失败: ' + modelList[index]);
 } finally {
 isLoading = false;
