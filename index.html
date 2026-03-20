@@ -133,7 +133,7 @@ border-radius: 12px;
 font-size: 16px;
 font-weight: 500;
 color: #1B4332;
-box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+box-shadow: 0 40px 20px rgba(0, 0, 0, 0.15);
 opacity: 0;
 transition: opacity 0.3s ease;
 pointer-events: none;
@@ -516,7 +516,7 @@ display: none !important;
 </div>
 </div>
 <div class="quality-options">
-<div class="quality-option" data-quality="low" onclick="setQuality('low')">
+<div class="quality-option active" data-quality="low" onclick="setQuality('low')">
 <div class="quality-icon low">
 <i class="fas fa-leaf"></i>
 </div>
@@ -528,7 +528,7 @@ display: none !important;
 <i class="fas fa-check"></i>
 </div>
 </div>
-<div class="quality-option active" data-quality="medium" onclick="setQuality('medium')">
+<div class="quality-option" data-quality="medium" onclick="setQuality('medium')">
 <div class="quality-icon medium">
 <i class="fas fa-seedling"></i>
 </div>
@@ -787,7 +787,7 @@ window.modelConfig = modelConfig;
 let currentModelIndex = 0;
 let isLoading = false;
 let modelCounterTimeout = null;
-let currentQuality = localStorage.getItem('modelQuality') || 'medium';
+let currentQuality = localStorage.getItem('modelQuality') || 'low'; // 默认设置为 low
 
 // 初始化质量选项
 function initQuality() {
@@ -880,6 +880,24 @@ const errorMessage = document.getElementById('error-message');
 errorMessage.classList.add('hidden');
 }
 
+// 构建模型路径 - 专门适配你的目录结构
+function getModelPath(filename, quality) {
+// 根据质量等级构建路径
+// low -> models/low/filename
+// medium -> models/filename (如果不存在则回退到 low)
+// high -> models/high/filename (如果不存在则回退到 medium 或 low)
+switch(quality) {
+case 'low':
+return `./models/low/${filename}`;
+case 'medium':
+return `./models/${filename}`;
+case 'high':
+return `./models/high/${filename}`;
+default:
+return `./models/low/${filename}`;
+}
+}
+
 // 初始化
 async function initScene() {
 const container = document.getElementById('canvas-container');
@@ -952,35 +970,56 @@ if (window.viewer && window.viewer.splatMesh && window.viewer.splatMesh.scenes) 
     }
 }
 
-// 构建正确的模型路径 - 检查是否存在质量分级目录
-let modelPath;
-if (currentQuality !== 'medium') {
-    // 尝试带质量分级的路径
-    modelPath = './models/' + currentQuality.charAt(0).toUpperCase() + currentQuality.slice(1) + '/' + modelList[index];
-} else {
-    // 中等质量时先尝试根models目录
-    modelPath = './models/' + modelList[index];
+// 构建正确的模型路径 - 使用新的 getModelPath 函数
+let modelPath = getModelPath(modelList[index], currentQuality);
+
+// 检查文件是否存在，如果不存在则按优先级回退
+let fileExists = false;
+let finalModelPath = modelPath;
+
+try {
+    const response = await fetch(modelPath, { method: 'HEAD' });
+    if (response.ok) {
+        fileExists = true;
+        finalModelPath = modelPath;
+    }
+} catch (fetchError) {
+    console.log(`检查文件失败: ${modelPath}`, fetchError);
 }
 
-// 首先检查文件是否存在
-const response = await fetch(modelPath);
-if (!response.ok) {
-    // 如果质量分级路径不存在，尝试根models目录
+// 如果文件不存在，按优先级回退
+if (!fileExists) {
+    const fallbackPaths = [];
+    
+    if (currentQuality !== 'low') {
+        fallbackPaths.push(getModelPath(modelList[index], 'low'));
+    }
     if (currentQuality !== 'medium') {
-        modelPath = './models/' + modelList[index];
-        const fallbackResponse = await fetch(modelPath);
-        if (!fallbackResponse.ok) {
-            throw new Error(`模型文件不存在: ${modelPath} (状态码: ${response.status})`);
+        fallbackPaths.push(getModelPath(modelList[index], 'medium'));
+    }
+    
+    for (const fallbackPath of fallbackPaths) {
+        try {
+            const response = await fetch(fallbackPath, { method: 'HEAD' });
+            if (response.ok) {
+                finalModelPath = fallbackPath;
+                fileExists = true;
+                break;
+            }
+        } catch (fallbackError) {
+            console.log(`回退路径检查失败: ${fallbackPath}`, fallbackError);
         }
-    } else {
-        throw new Error(`模型文件不存在: ${modelPath} (状态码: ${response.status})`);
     }
 }
 
-console.log('正在加载模型:', modelPath);
+if (!fileExists) {
+    throw new Error(`所有可能的模型路径都不存在: ${modelList[index]}`);
+}
+
+console.log('正在加载模型:', finalModelPath);
 
 // 在加载模型时添加额外的错误处理
-await window.viewer.addSplatScene(modelPath, {
+await window.viewer.addSplatScene(finalModelPath, {
 splatAlphaRemovalThreshold: 5,
 showLoadingUI: false,
 position: [0, 0, 0],
@@ -1071,36 +1110,4 @@ toast.classList.add('translate-x-[150%]');
 // 按钮事件绑定
 document.addEventListener('DOMContentLoaded', function() {
 // 重置视角按钮
-document.getElementById('reset-view-btn').addEventListener('click', function() {
-if (typeof window.resetCameraView === 'function') {
-window.resetCameraView();
-}
-});
-
-// 设置按钮
-document.getElementById('settings-btn').addEventListener('click', function() {
-if (typeof window.openSettings === 'function') {
-window.openSettings();
-}
-});
-
-// 点击遮罩关闭设置
-document.getElementById('settings-overlay').addEventListener('click', function() {
-if (typeof window.closeSettings === 'function') {
-window.closeSettings();
-}
-});
-});
-
-// 键盘左右键切换模型
-document.addEventListener('keydown', function(e) {
-if (e.key === 'ArrowLeft') {
-if (typeof window.prevModel === 'function') window.prevModel();
-} else if (e.key === 'ArrowRight') {
-if (typeof window.nextModel === 'function') window.nextModel();
-}
-});
-</script>
-
-</body>
-</html>
+document.getEleme
