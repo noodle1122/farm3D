@@ -902,11 +902,11 @@ showLoadingUI: false,
 rootElement: container
 });
 
-// 添加错误监听器
-window.viewer.addEventListener('error', (event) => {
-console.error('Viewer error:', event);
-showError('渲染器错误: ' + event.message);
-});
+// 修复：移除不支持的 addEventListener 调用
+// 添加错误处理到其他地方
+if (!window.viewer) {
+    throw new Error('Viewer initialization failed - viewer is null');
+}
 
 if (window.viewer.perspectiveControls) {
 window.viewer.perspectiveControls.minPolarAngle = 0;
@@ -970,15 +970,16 @@ if (!response.ok) {
         modelPath = './models/' + modelList[index];
         const fallbackResponse = await fetch(modelPath);
         if (!fallbackResponse.ok) {
-            throw new Error(`模型文件不存在: ${modelPath} (${response.status})`);
+            throw new Error(`模型文件不存在: ${modelPath} (状态码: ${response.status})`);
         }
     } else {
-        throw new Error(`模型文件不存在: ${modelPath} (${response.status})`);
+        throw new Error(`模型文件不存在: ${modelPath} (状态码: ${response.status})`);
     }
 }
 
 console.log('正在加载模型:', modelPath);
 
+// 在加载模型时添加额外的错误处理
 await window.viewer.addSplatScene(modelPath, {
 splatAlphaRemovalThreshold: 5,
 showLoadingUI: false,
